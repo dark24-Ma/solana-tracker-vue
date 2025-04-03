@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'solana-tracker-frontend',
       script: 'serve',
-      args: '-s dist -l 6608',
+      args: '-s dist -l 8080',
       instances: 1,
       autorestart: true,
       watch: false,
