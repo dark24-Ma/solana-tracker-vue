@@ -5,7 +5,8 @@
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "start": "serve -s dist -l 6608"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
@@ -13,6 +14,7 @@
     "bootstrap": "^5.3.3",
     "chart.js": "^3.9.1",
     "core-js": "^3.8.3",
+    "serve": "^14.2.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "vue": "^3.2.13",
