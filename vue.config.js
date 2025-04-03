@@ -11,14 +11,19 @@ module.exports = defineConfig({
   chainWebpack: config => {
     config.plugin('copy')
       .tap(args => {
-        args[0].push({
-          from: 'netlify.toml',
-          to: './'
-        });
-        args[0].push({
-          from: '_redirects',
-          to: './'
-        });
+        const patterns = [
+          ...(args[0].patterns || []), 
+          { 
+            from: 'netlify.toml',
+            to: './' 
+          },
+          { 
+            from: '_redirects',
+            to: './' 
+          }
+        ];
+        
+        args[0] = { patterns };
         return args;
       });
   }
