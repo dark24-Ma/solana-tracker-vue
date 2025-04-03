@@ -6,7 +6,8 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "start": "serve -s dist -l 6608 --single"
+    "start": "serve -s dist -l 6608 --single",
+    "serve-prod": "npx serve -s dist -l 6608 --single --cors"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
