@@ -3,6 +3,12 @@ module.exports = defineConfig({
   transpileDependencies: true,
   publicPath: '/',
   productionSourceMap: false,
+  devServer: {
+    historyApiFallback: true,
+    allowedHosts: 'all',
+    host: '0.0.0.0',
+    port: 6608
+  },
   configureWebpack: {
     output: {
       filename: '[name].[hash].js'
