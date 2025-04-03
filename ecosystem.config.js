@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'solana-tracker-frontend',
-      script: 'serve',
-      args: '-s dist -l 8080',
+      script: 'npx',
+      args: 'serve -s dist -l 6608',
       instances: 1,
       autorestart: true,
       watch: false,
