@@ -14,6 +14,13 @@
       </div>
     </div>
 
+    <!-- Modal pour les détails du token -->
+    <div class="token-detail-modal" v-if="selectedToken" @click.self="closeTokenDetail">
+      <div class="token-detail-content" @click.stop>
+        <TokenDetail :token="selectedToken" @close="closeTokenDetail" />
+      </div>
+    </div>
+
     <div class="dashboard-header mb-4">
       <h1 class="token-list-title">Surveillance des Tokens Solana</h1>
       <div class="filters d-flex align-items-center mb-3">
@@ -113,8 +120,8 @@
 
       <div class="row g-3">
         <div v-for="token in paginatedTokens" :key="token.mint" class="col-12 col-md-6 col-lg-4">
-          <div class="token-card" :class="{'new-token': token.isNew && isNewToken(token)}">
-            <div class="card h-100 shadow-sm hover-shadow">
+          <div class="token-card" :class="{'new-token': token.isNew && isNewToken(token)}" @click="showTokenDetail(token)">
+            <div class="card h-100 shadow-sm hover-shadow pointer">
               <div class="card-body">
                 <div class="d-flex align-items-center mb-3">
                   <div class="token-logo-wrapper me-3">
@@ -150,6 +157,48 @@
                       </div>
                       <div class="detail-value">
                         {{ token.address ? token.address.substring(0, 6) + '...' + token.address.substring(token.address.length - 4) : 'N/A' }}
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="detail-label">
+                        <i class="fas fa-money-bill-wave me-1 text-success"></i> Prix
+                      </div>
+                      <div class="detail-value">
+                        {{ formatPrice(token.priceUsd) }}
+                        <span 
+                          v-if="token.priceChange24h" 
+                          :class="token.priceChange24h > 0 ? 'text-success' : 'text-danger'"
+                          class="ms-1 price-change-badge"
+                        >
+                          <i :class="token.priceChange24h > 0 ? 'fas fa-caret-up' : 'fas fa-caret-down'"></i>
+                          {{ token.priceChange24h.toFixed(2) }}%
+                        </span>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="detail-label">
+                        <i class="fas fa-chart-line me-1 text-primary"></i> Volume 24h
+                      </div>
+                      <div class="detail-value">
+                        {{ formatNumber(token.volume24h) }}
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="detail-label">
+                        <i class="fas fa-exchange-alt me-1 text-warning"></i> Exchange
+                      </div>
+                      <div class="detail-value">
+                        <span :class="getExchangeClass(token.exchange)">
+                          {{ formatExchangeName(token.exchange) }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <div class="detail-label">
+                        <i class="fas fa-tint me-1 text-info"></i> Liquidité
+                      </div>
+                      <div class="detail-value">
+                        {{ formatNumber(token.liquidity) }}
                       </div>
                     </div>
                     <div class="col-12" v-if="token.description">
@@ -235,9 +284,13 @@
 import { onBeforeUnmount, ref, computed, onMounted, watch } from 'vue';
 import io from 'socket.io-client';
 import { generateNotificationSound } from '../utils/generateNotificationSound';
+import TokenDetail from './TokenDetail.vue';
 
 export default {
   name: 'TokenList',
+  components: {
+    TokenDetail
+  },
   setup() {
     const tokens = ref([]);
     const loading = ref(true);
@@ -255,6 +308,9 @@ export default {
     const previousTokensLength = ref(0);
     const alerts = ref([]);
     const MAX_ALERTS = 3;
+    
+    // Variable pour la sélection d'un token et affichage des détails
+    const selectedToken = ref(null);
     
     // Variable pour éviter les requêtes simultanées
     const isCurrentlyFetching = ref(false);
@@ -680,6 +736,38 @@ export default {
       return typeLabels[type] || type;
     };
     
+    // Formater le nom de l'exchange pour l'affichage
+    const formatExchangeName = (exchange) => {
+      if (!exchange) return 'N/A';
+      
+      const exchangeNames = {
+        'jupiter': 'Jupiter',
+        'raydium': 'Raydium',
+        'pumpswap': 'Pumpswap',
+        'phoenix': 'Phoenix',
+        'orca': 'Orca',
+        'meteora': 'Meteora'
+      };
+      
+      return exchangeNames[exchange] || exchange.charAt(0).toUpperCase() + exchange.slice(1);
+    };
+    
+    // Récupérer la classe CSS pour l'exchange
+    const getExchangeClass = (exchange) => {
+      if (!exchange) return '';
+      
+      const exchangeClasses = {
+        'jupiter': 'exchange-jupiter',
+        'raydium': 'exchange-raydium',
+        'pumpswap': 'exchange-pumpswap',
+        'phoenix': 'exchange-phoenix',
+        'orca': 'exchange-orca',
+        'meteora': 'exchange-meteora'
+      };
+      
+      return exchangeClasses[exchange] || '';
+    };
+    
     // Cycle de vie du composant
     onMounted(async () => {
       try {
@@ -778,6 +866,16 @@ export default {
       alerts.value = alerts.value.filter(alert => alert.id !== id);
     };
     
+    const showTokenDetail = (token) => {
+      selectedToken.value = token;
+      document.body.classList.add('overflow-hidden');
+    };
+    
+    const closeTokenDetail = () => {
+      selectedToken.value = null;
+      document.body.classList.remove('overflow-hidden');
+    };
+    
     return {
       tokens,
       loading,
@@ -815,7 +913,12 @@ export default {
       alerts,
       addAlert,
       removeAlert,
-      getAlertIcon
+      getAlertIcon,
+      selectedToken,
+      showTokenDetail,
+      closeTokenDetail,
+      formatExchangeName,
+      getExchangeClass
     };
   }
 };
@@ -842,6 +945,11 @@ export default {
 .token-card {
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   height: 100%;
+  cursor: pointer;
+}
+
+.pointer {
+  cursor: pointer;
 }
 
 .hover-shadow {
@@ -1152,5 +1260,81 @@ export default {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+.token-detail-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.token-detail-content {
+  background-color: #121212;
+  border-radius: 12px;
+  max-width: 80%;
+  max-height: 85%;
+  overflow-y: auto;
+  box-shadow: 0 0 30px rgba(153, 69, 255, 0.3);
+  border: 1px solid rgba(153, 69, 255, 0.3);
+}
+
+.exchange-jupiter {
+  color: #6f4cff;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(111, 76, 255, 0.4);
+}
+
+.exchange-raydium {
+  color: #5ac4be;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(90, 196, 190, 0.4);
+}
+
+.exchange-pumpswap {
+  color: #ff5b5b;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(255, 91, 91, 0.4);
+}
+
+.exchange-phoenix {
+  color: #ff9e5b;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(255, 158, 91, 0.4);
+}
+
+.exchange-orca {
+  color: #41b3a3;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(65, 179, 163, 0.4);
+}
+
+.exchange-meteora {
+  color: #9e45ff;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(158, 69, 255, 0.4);
+}
+
+.price-change-badge {
+  font-size: 0.75rem;
+  font-weight: bold;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.text-success {
+  color: #14f195 !important;
+}
+
+.text-danger {
+  color: #f14d7b !important;
 }
 </style> 
