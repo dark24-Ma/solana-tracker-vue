@@ -99,7 +99,7 @@
 
       <div class="row g-3">
         <div v-for="token in paginatedTokens" :key="token.mint" class="col-12 col-md-6 col-lg-4">
-          <div class="token-card">
+          <div class="token-card" :class="{'new-token': token.isNew && isNewToken(token)}">
             <div class="card h-100 shadow-sm hover-shadow">
               <div class="card-body">
                 <div class="d-flex align-items-center mb-3">
@@ -220,6 +220,7 @@
 <script>
 import { onBeforeUnmount, ref, computed, onMounted, watch } from 'vue';
 import io from 'socket.io-client';
+import { generateNotificationSound } from '../utils/generateNotificationSound';
 
 export default {
   name: 'TokenList',
@@ -236,6 +237,11 @@ export default {
     const logsMinimized = ref(false);
     const clientCount = ref(0);
     const checkingSolscan = ref(false);
+    const notificationSound = ref(null);
+    const previousTokensLength = ref(0);
+    
+    // Variable pour éviter les requêtes simultanées
+    const isCurrentlyFetching = ref(false);
     
     // Fonction pour ajouter un log
     const addLog = (type, message) => {
@@ -328,41 +334,44 @@ export default {
     
     // Récupérer les tokens depuis l'API
     const fetchTokens = async () => {
-      loading.value = true;
-      error.value = null;
+      // Éviter les requêtes simultanées
+      if (isCurrentlyFetching.value) {
+        return;
+      }
+      
+      isCurrentlyFetching.value = true;
+      
+      if (!loading.value) {
+        loading.value = true;
+      }
       
       try {
-        addLog('info', 'Récupération des tokens...');
-        
         // Utiliser le service TokenService pour récupérer les tokens
-        import('../services/tokenService').then(async (module) => {
-          const TokenService = module.default;
-          const tokensData = await TokenService.fetchAllTokens();
+        const TokenServiceModule = await import('../services/tokenService');
+        const TokenService = TokenServiceModule.default;
+        const tokensData = await TokenService.fetchAllTokens();
+        
+        if (Array.isArray(tokensData)) {
+          // Comparer avec les données existantes pour détecter les nouveaux tokens
+          const existingTokenAddresses = new Set(tokens.value.map(t => t.address));
+          const newTokens = tokensData.filter(t => !existingTokenAddresses.has(t.address));
           
-          if (Array.isArray(tokensData)) {
-            tokens.value = tokensData;
-            addLog('success', `${tokensData.length} tokens récupérés avec succès`);
-          } else {
-            console.error('La réponse API n\'est pas un tableau:', tokensData);
-            tokens.value = [];
-            error.value = 'Format de données invalide. Veuillez réessayer plus tard.';
-            addLog('error', 'Format de données invalide reçu de l\'API');
+          if (newTokens.length > 0) {
+            // Intégrer les nouveaux tokens sans remplacer tout le tableau
+            tokens.value = [...newTokens, ...tokens.value];
+            addLog('success', `${newTokens.length} nouveaux tokens détectés`);
           }
-          
-          loading.value = false;
-        }).catch(err => {
-          console.error('Erreur lors du chargement du service TokenService:', err);
-          error.value = 'Impossible de charger le service de tokens. Veuillez réessayer plus tard.';
-          tokens.value = [];
-          loading.value = false;
-          addLog('error', `Erreur lors du chargement du service TokenService: ${err.message}`);
-        });
+        }
       } catch (err) {
         console.error('Erreur lors de la récupération des tokens:', err);
-        error.value = 'Impossible de récupérer les tokens. Veuillez réessayer plus tard.';
-        tokens.value = []; // S'assurer que tokens est toujours un tableau
+        
+        if (!error.value) {
+          error.value = 'Impossible de récupérer les tokens. Veuillez réessayer plus tard.';
+          addLog('error', `Erreur lors de la récupération des tokens: ${err.message}`);
+        }
+      } finally {
         loading.value = false;
-        addLog('error', `Erreur lors de la récupération des tokens: ${err.message}`);
+        isCurrentlyFetching.value = false;
       }
     };
     
@@ -603,15 +612,24 @@ export default {
     };
     
     // Cycle de vie du composant
-    onMounted(() => {
+    onMounted(async () => {
+      try {
+        // Initialiser le son de notification de manière dynamique
+        notificationSound.value = await generateNotificationSound();
+        addLog('info', 'Son de notification initialisé');
+      } catch (err) {
+        console.error('Erreur lors de l\'initialisation du son:', err);
+        addLog('error', 'Impossible d\'initialiser le son de notification');
+      }
+      
       fetchTokens();
       connectSocket();
       
-      // Rafraîchir les données toutes les 5 minutes
-      const refreshInterval = setInterval(() => {
-        addLog('info', 'Rafraîchissement automatique des données');
-        fetchTokens();
-      }, 5 * 60 * 1000);
+      // Rafraîchir les données toutes les 1 minute
+      const refreshInterval = setInterval(async () => {
+        addLog('info', 'Vérification automatique des nouveaux tokens...');
+        await fetchTokens();
+      }, 60000); // 60000ms = 1 minute
       
       // Nettoyer l'intervalle lors du démontage
       onBeforeUnmount(() => {
@@ -630,6 +648,28 @@ export default {
           }
         }
       });
+    });
+    
+    // Fonction pour jouer le son de notification
+    const playNotificationSound = () => {
+      if (notificationSound.value) {
+        // Réinitialiser le temps de lecture pour permettre des lectures répétées
+        notificationSound.value.currentTime = 0;
+        notificationSound.value.play().catch(err => {
+          console.error('Erreur lors de la lecture du son:', err);
+        });
+      }
+    };
+    
+    // Surveiller les tokens pour détecter les nouveaux tokens
+    watch(tokens, (newTokens) => {
+      if (Array.isArray(newTokens) && previousTokensLength.value > 0 && newTokens.length > previousTokensLength.value) {
+        // Nouveaux tokens détectés
+        const newTokenCount = newTokens.length - previousTokensLength.value;
+        playNotificationSound();
+        addLog('success', `${newTokenCount} nouveau(x) token(s) détecté(s)!`);
+      }
+      previousTokensLength.value = Array.isArray(newTokens) ? newTokens.length : 0;
     });
     
     // Surveiller les changements de page pour éviter les valeurs invalides
@@ -670,7 +710,9 @@ export default {
       addSystemStatusLog,
       getLinkButtonClass,
       getLinkIcon,
-      getLinkLabel
+      getLinkLabel,
+      playNotificationSound,
+      notificationSound
     };
   }
 };
@@ -937,6 +979,27 @@ export default {
     width: 100%;
     margin-right: 0 !important;
     margin-bottom: 0.5rem;
+  }
+}
+
+.token-card.new-token {
+  animation: newTokenPulse 2s;
+}
+
+@keyframes newTokenPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(153, 69, 255, 0.7);
+  }
+  
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px 10px rgba(153, 69, 255, 0.5);
+  }
+  
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(153, 69, 255, 0);
   }
 }
 </style> 
