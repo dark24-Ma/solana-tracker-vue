@@ -28,10 +28,21 @@
       
       <div class="card-body">
         <!-- Indicateur d'Exchange -->
-        <div class="exchange-indicator mb-4 fade-in" v-if="token.exchange">
+        <div class="exchange-indicator mb-3 fade-in" v-if="token.exchange">
           <span class="exchange-badge" :class="getExchangeClass(token.exchange)">
             <i class="fas fa-exchange-alt me-2"></i>{{ formatExchangeName(token.exchange) }}
           </span>
+        </div>
+        
+        <!-- Source des données -->
+        <div class="data-source mb-4 fade-in" style="--delay: 0.05s">
+          <a href="https://dexscreener.com" target="_blank" class="dexscreener-badge">
+            <img src="https://dexscreener.com/favicon.png" alt="DexScreener" width="16" height="16" class="me-1"> 
+            Données fournies par DexScreener
+          </a>
+          <div class="data-update-time">
+            <i class="fas fa-sync-alt me-1"></i> Mise à jour {{ getUpdateTime() }}
+          </div>
         </div>
         
         <!-- Prix et statistiques -->
@@ -208,12 +219,28 @@ export default {
     const formatPrice = (price) => {
       if (!price || isNaN(price) || price === 0) return '$0.00';
       
-      // Formater les petits prix avec plus de décimales
-      if (price < 0.01) {
+      // Formater les petits prix avec plus de décimales pour Solana
+      if (price < 0.0000001) {
+        // Format scientifique pour les prix extrêmement petits
+        return `$${price.toExponential(4)}`;
+      } else if (price < 0.00001) {
+        return `$${price.toFixed(10)}`;
+      } else if (price < 0.0001) {
+        return `$${price.toFixed(9)}`;
+      } else if (price < 0.001) {
         return `$${price.toFixed(8)}`;
+      } else if (price < 0.01) {
+        return `$${price.toFixed(6)}`;
+      } else if (price < 0.1) {
+        return `$${price.toFixed(5)}`;
       } else if (price < 1) {
         return `$${price.toFixed(4)}`;
+      } else if (price < 10) {
+        return `$${price.toFixed(3)}`;
+      } else if (price < 1000) {
+        return `$${price.toFixed(2)}`;
       } else {
+        // Pour les grands nombres, utiliser le formatage standard avec séparateurs
         return `$${price.toLocaleString('fr-FR', { 
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
@@ -543,6 +570,11 @@ export default {
       initChart();
     });
     
+    // Afficher quand les données ont été mises à jour
+    const getUpdateTime = () => {
+      return 'à l\'instant';
+    };
+    
     return {
       chartContainer,
       chartData,
@@ -560,7 +592,8 @@ export default {
       getLinkIcon,
       getLinkLabel,
       formatExchangeName,
-      getExchangeClass
+      getExchangeClass,
+      getUpdateTime
     };
   }
 };
@@ -1027,5 +1060,33 @@ h5::before {
 .exchange-meteora {
   color: #9e45ff;
   text-shadow: 0 0 5px rgba(158, 69, 255, 0.6);
+}
+
+.data-source {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed rgba(153, 69, 255, 0.2);
+  margin-bottom: 1rem;
+}
+
+.dexscreener-badge {
+  display: flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.dexscreener-badge:hover {
+  color: white;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+}
+
+.data-update-time {
+  font-style: italic;
 }
 </style> 

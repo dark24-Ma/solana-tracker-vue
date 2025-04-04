@@ -583,12 +583,28 @@ export default {
     const formatPrice = (price) => {
       if (!price || isNaN(price) || price === 0) return '$0.00';
       
-      // Formater les petits prix avec plus de décimales
-      if (price < 0.01) {
+      // Formater les petits prix avec plus de décimales pour Solana
+      if (price < 0.0000001) {
+        // Format scientifique pour les prix extrêmement petits
+        return `$${price.toExponential(4)}`;
+      } else if (price < 0.00001) {
+        return `$${price.toFixed(10)}`;
+      } else if (price < 0.0001) {
+        return `$${price.toFixed(9)}`;
+      } else if (price < 0.001) {
         return `$${price.toFixed(8)}`;
+      } else if (price < 0.01) {
+        return `$${price.toFixed(6)}`;
+      } else if (price < 0.1) {
+        return `$${price.toFixed(5)}`;
       } else if (price < 1) {
         return `$${price.toFixed(4)}`;
+      } else if (price < 10) {
+        return `$${price.toFixed(3)}`;
+      } else if (price < 1000) {
+        return `$${price.toFixed(2)}`;
       } else {
+        // Pour les grands nombres, utiliser le formatage standard avec séparateurs
         return `$${price.toLocaleString('fr-FR', { 
           minimumFractionDigits: 2,
           maximumFractionDigits: 2

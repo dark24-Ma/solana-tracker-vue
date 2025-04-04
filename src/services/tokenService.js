@@ -8,59 +8,123 @@ class TokenService {
    */
   static async fetchAllTokens() {
     try {
-      const response = await fetch('https://api.dexscreener.com/token-profiles/latest/v1');
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`);
+      // Récupérer d'abord les profils de tokens
+      const profilesResponse = await fetch('https://api.dexscreener.com/token-profiles/latest/v1');
+      if (!profilesResponse.ok) {
+        throw new Error(`Erreur HTTP: ${profilesResponse.status}`);
       }
       
-      const data = await response.json();
+      const profilesData = await profilesResponse.json();
       
       // Filtrer pour ne garder que les tokens Solana
-      const solanaTokens = Array.isArray(data) 
-        ? data.filter(token => token.chainId === 'solana')
+      const solanaProfiles = Array.isArray(profilesData) 
+        ? profilesData.filter(token => token.chainId === 'solana')
         : [];
       
+      // Récupérer les données de prix depuis Dexscreener pour les tokens Solana
+      const pairsPromises = [];
+      const chunkSize = 10; // Traiter les tokens par groupes de 10 pour éviter de surcharger l'API
+      
+      // Diviser les tokens en chunks
+      for (let i = 0; i < solanaProfiles.length; i += chunkSize) {
+        const chunk = solanaProfiles.slice(i, i + chunkSize);
+        
+        // Pour chaque token dans le chunk, récupérer les données de paires
+        const chunkPromises = chunk.map(async (token) => {
+          try {
+            const pairResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.tokenAddress}`);
+            if (!pairResponse.ok) {
+              console.warn(`Impossible de récupérer les données pour ${token.tokenAddress}`);
+              return null;
+            }
+            
+            const pairData = await pairResponse.json();
+            return { profile: token, pairs: pairData.pairs || [] };
+          } catch (error) {
+            console.warn(`Erreur lors de la récupération des données pour ${token.tokenAddress}:`, error);
+            return null;
+          }
+        });
+        
+        pairsPromises.push(...chunkPromises);
+        
+        // Attendre un peu entre chaque chunk pour ne pas surcharger l'API
+        if (i + chunkSize < solanaProfiles.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      // Attendre que toutes les requêtes soient terminées
+      const tokensWithPairs = await Promise.all(pairsPromises);
+      
       // Transformer les données pour correspondre au format attendu par notre application
-      return solanaTokens.map(token => {
-        // Déterminer l'exchange basé sur l'URL ou d'autres indicateurs
-        let exchange = this.determineExchange(token);
-        
-        // Générer des données financières simulées
-        const randomPrice = (Math.random() * 10).toFixed(Math.random() * 8);
-        const randomVolume = Math.floor(Math.random() * 1000000);
-        const randomLiquidity = Math.floor(Math.random() * 500000);
-        const randomPriceChange = (Math.random() * 20 - 10).toFixed(2);
-        const randomFdv = Math.floor(Math.random() * 10000000);
-        
-        return {
-          name: token.description || token.tokenAddress.substring(0, 8),
-          symbol: token.symbol || '',
-          priceUsd: parseFloat(randomPrice),
-          liquidity: randomLiquidity,
-          volume24h: randomVolume,
-          priceChange24h: parseFloat(randomPriceChange),
-          fdv: randomFdv,
-          pairAddress: '',
-          exchange: exchange,
-          createdAt: new Date().toISOString(),
-          mint: token.tokenAddress,
-          address: token.tokenAddress,
-          logoURI: token.icon || '',
-          headerURI: token.header || '',
-          links: token.links || [],
-          website: token.links?.find(link => link.label === 'Website')?.url || '',
-          twitter: token.links?.find(link => link.type === 'twitter')?.url || '',
-          isMemecoin: true,
-          tokenType: 'memecoin',
-          isNew: true,
-          description: token.description || '',
-          url: token.url || ''
-        };
-      });
+      return tokensWithPairs
+        .filter(item => item !== null)
+        .map(item => {
+          const { profile, pairs } = item;
+          
+          // Trouver la meilleure paire (avec la liquidité la plus élevée)
+          const bestPair = pairs.length > 0 
+            ? pairs.sort((a, b) => parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0))[0] 
+            : null;
+          
+          // Déterminer l'exchange basé sur l'URL ou d'autres indicateurs
+          let exchange = this.determineExchange(profile);
+          
+          // Si on a une paire, on peut récupérer l'exchange depuis la paire
+          if (bestPair && bestPair.dexId) {
+            exchange = bestPair.dexId.toLowerCase();
+          }
+          
+          return {
+            name: profile.description || profile.tokenAddress.substring(0, 8),
+            symbol: profile.symbol || '',
+            priceUsd: bestPair ? parseFloat(bestPair.priceUsd || 0) : 0,
+            liquidity: bestPair ? parseFloat(bestPair.liquidity?.usd || 0) : 0,
+            volume24h: bestPair ? parseFloat(bestPair.volume?.h24 || 0) : 0,
+            priceChange24h: bestPair ? parseFloat(bestPair.priceChange?.h24 || 0) : 0,
+            fdv: bestPair ? parseFloat(bestPair.fdv || 0) : 0,
+            pairAddress: bestPair ? bestPair.pairAddress : '',
+            exchange: exchange,
+            createdAt: bestPair ? new Date(bestPair.createAt || Date.now()).toISOString() : new Date().toISOString(),
+            mint: profile.tokenAddress,
+            address: profile.tokenAddress,
+            logoURI: profile.icon || '',
+            headerURI: profile.header || '',
+            links: profile.links || [],
+            website: profile.links?.find(link => link.label === 'Website')?.url || '',
+            twitter: profile.links?.find(link => link.type === 'twitter')?.url || '',
+            isMemecoin: true,
+            tokenType: 'memecoin',
+            isNew: bestPair ? this.isNewToken(bestPair.createAt) : true,
+            description: profile.description || '',
+            url: bestPair ? bestPair.url : profile.url || ''
+          };
+        });
     } catch (error) {
       console.error('Erreur lors de la récupération des tokens:', error);
       // En cas d'erreur, retourner un tableau vide
       return [];
+    }
+  }
+
+  /**
+   * Vérifie si un token est récent (moins de 24h)
+   * @param {string} createAtStr Date de création du token
+   * @returns {boolean} Vrai si le token est récent
+   */
+  static isNewToken(createAtStr) {
+    if (!createAtStr) return false;
+    
+    try {
+      const createAt = new Date(createAtStr);
+      const now = new Date();
+      const diff = now - createAt;
+      
+      // Token récent si créé il y a moins de 24h
+      return diff < 24 * 60 * 60 * 1000;
+    } catch (e) {
+      return false;
     }
   }
 
