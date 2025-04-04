@@ -12,7 +12,12 @@
             >
           </div>
           <div>
-            <h2 class="mb-0 token-title">{{ token.name }} <span class="token-symbol">({{ token.symbol }})</span></h2>
+            <div class="d-flex align-items-center">
+              <h2 class="mb-0 token-title">{{ token.name }} <span class="token-symbol">({{ token.symbol }})</span></h2>
+              <span v-if="token.rugpullScore" class="reliability-badge ms-2" :class="getReliabilityClass(token.rugpullScore)">
+                {{ token.rugpullScore.level }}
+              </span>
+            </div>
             <div class="token-address">
               <small>{{ token.address ? token.address.substring(0, 10) + '...' + token.address.substring(token.address.length - 6) : 'N/A' }}</small>
               <button class="btn btn-sm btn-link p-0 ms-2" v-if="token.address" @click="copyToClipboard(token.address)">
@@ -187,6 +192,106 @@
                   <a v-if="token.url" :href="token.url" target="_blank" class="btn btn-outline-success flex-grow-1">
                     <i class="fas fa-chart-line me-1"></i> Dexscreener
                   </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Carte d'analyse de fiabilité -->
+        <div class="row mb-4" v-if="token.rugpullScore">
+          <div class="col-12">
+            <div class="detail-card">
+              <div class="detail-card-header">
+                <h3>
+                  <i class="fas fa-shield-alt me-2"></i>
+                  Analyse de fiabilité
+                </h3>
+              </div>
+              <div class="detail-card-body">
+                <div class="rugpull-score">
+                  <div class="score-header d-flex justify-content-between align-items-center mb-3">
+                    <div class="score-title">
+                      <h4 class="mb-0">Score de fiabilité</h4>
+                      <p class="text-muted mb-0">Basé sur plusieurs facteurs de risque</p>
+                    </div>
+                    <div class="score-badge" :class="getReliabilityClass(token.rugpullScore)">
+                      {{ token.rugpullScore.level }}
+                      <span class="score-value ms-2">{{ token.rugpullScore.score.toFixed(1) }}/10</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Évaluation du potentiel de rugpull -->
+                  <div class="rugpull-potential mb-4">
+                    <div class="alert" :class="getRugpullAlertClass(token.rugpullScore.rugpullPotential)">
+                      <div class="d-flex align-items-center">
+                        <div class="rugpull-icon me-3">
+                          <i :class="getRugpullIcon(token.rugpullScore.rugpullPotential)"></i>
+                        </div>
+                        <div>
+                          <strong>Potentiel de rugpull : {{ token.rugpullScore.rugpullPotential }}</strong>
+                          <p class="mb-0">{{ token.rugpullScore.riskComment }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Facteurs de risque clés -->
+                  <div v-if="token.rugpullScore.keyRiskFactors && token.rugpullScore.keyRiskFactors.length > 0" class="key-risk-factors mb-4">
+                    <h5>Facteurs de risque clés</h5>
+                    <ul class="risk-factors-list">
+                      <li v-for="(factor, index) in token.rugpullScore.keyRiskFactors" :key="index">
+                        <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                        {{ factor }}
+                      </li>
+                    </ul>
+                  </div>
+                  
+                  <div class="score-details">
+                    <div class="score-progress mb-4">
+                      <div class="progress" style="height: 12px;">
+                        <div class="progress-bar bg-danger" role="progressbar" style="width: 25%"></div>
+                        <div class="progress-bar bg-warning" role="progressbar" style="width: 25%"></div>
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 25%"></div>
+                        <div class="progress-bar bg-info" role="progressbar" style="width: 25%"></div>
+                      </div>
+                      <div class="d-flex justify-content-between mt-1">
+                        <span class="small">Très Risqué</span>
+                        <span class="small">Modéré</span>
+                        <span class="small">Sûr</span>
+                      </div>
+                    </div>
+                    
+                    <h5>Résultats des tests</h5>
+                    <div class="score-factors">
+                      <div v-for="(test, index) in token.rugpullScore.tests" :key="index" class="score-factor-item">
+                        <div class="d-flex justify-content-between">
+                          <div class="factor-name">
+                            <i :class="test.passed ? 'fas fa-check-circle text-success' : 'fas fa-times-circle text-danger'"></i>
+                            {{ getTestLabel(test.name) }}
+                            <small v-if="test.actualValue" class="ms-2 text-secondary">
+                              ({{ test.actualValue }})
+                            </small>
+                          </div>
+                          <div class="factor-weight">
+                            <span :class="test.passed ? 'text-success' : 'text-danger'">
+                              {{ test.passed ? '+' : '-' }}{{ test.weight.toFixed(1) }}
+                            </span>
+                          </div>
+                        </div>
+                        <p v-if="!test.passed" class="test-details mt-1 mb-0">
+                          <i class="fas fa-info-circle me-1"></i> {{ test.details }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="score-disclaimer mt-4">
+                    <p class="text-muted small">
+                      <i class="fas fa-info-circle me-1"></i>
+                      Ce score est calculé automatiquement et ne garantit pas l'absence de risque. Effectuez toujours vos propres recherches avant d'investir.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -574,7 +679,67 @@ export default {
     const getUpdateTime = () => {
       return 'à l\'instant';
     };
-    
+
+    const getReliabilityClass = (score) => {
+      if (!score) return 'reliability-na';
+      
+      switch(score.level) {
+        case 'Very Low':
+          return 'reliability-very-low';
+        case 'Low':
+          return 'reliability-low';
+        case 'Moderate':
+          return 'reliability-moderate';
+        case 'High':
+          return 'reliability-high';
+        default:
+          return 'reliability-na';
+      }
+    };
+
+    const getTestLabel = (testName) => {
+      const labels = {
+        'liquidity': 'Liquidité suffisante',
+        'age': 'Token créé depuis plus de 3 jours',
+        'socialMedia': 'Présence sur les réseaux sociaux',
+        'website': 'Site web existant',
+        'volume': 'Volume d\'échange important',
+        'exchange': 'Listé sur un exchange reconnu'
+      };
+      
+      return labels[testName] || testName;
+    };
+
+    const getRugpullAlertClass = (rugpullPotential) => {
+      if (!rugpullPotential) return '';
+      
+      switch(rugpullPotential) {
+        case 'Élevé':
+          return 'alert-danger';
+        case 'Possible':
+          return 'alert-warning';
+        case 'Faible':
+          return 'alert-success';
+        default:
+          return 'alert-secondary';
+      }
+    };
+
+    const getRugpullIcon = (rugpullPotential) => {
+      if (!rugpullPotential) return 'fas fa-question-circle';
+      
+      switch(rugpullPotential) {
+        case 'Élevé':
+          return 'fas fa-exclamation-triangle fa-2x';
+        case 'Possible':
+          return 'fas fa-exclamation-circle fa-2x';
+        case 'Faible':
+          return 'fas fa-check-circle fa-2x';
+        default:
+          return 'fas fa-question-circle fa-2x';
+      }
+    };
+
     return {
       chartContainer,
       chartData,
@@ -593,7 +758,11 @@ export default {
       getLinkLabel,
       formatExchangeName,
       getExchangeClass,
-      getUpdateTime
+      getUpdateTime,
+      getReliabilityClass,
+      getTestLabel,
+      getRugpullAlertClass,
+      getRugpullIcon
     };
   }
 };
@@ -1088,5 +1257,108 @@ h5::before {
 
 .data-update-time {
   font-style: italic;
+}
+
+.reliability-badge {
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  display: inline-block;
+}
+
+.reliability-very-low {
+  background-color: #ff4d4f;
+  color: white;
+}
+
+.reliability-low {
+  background-color: #faad14;
+  color: white;
+}
+
+.reliability-moderate {
+  background-color: #52c41a;
+  color: white;
+}
+
+.reliability-high {
+  background-color: #1890ff;
+  color: white;
+}
+
+.reliability-na {
+  background-color: #d9d9d9;
+  color: #666;
+}
+
+.score-badge {
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-weight: bold;
+}
+
+.score-value {
+  opacity: 0.8;
+}
+
+.score-factor-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.score-factor-item:last-child {
+  border-bottom: none;
+}
+
+.factor-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.factor-weight {
+  font-weight: bold;
+}
+
+.alert {
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.alert-danger {
+  background-color: #ff4d4f;
+  color: white;
+}
+
+.alert-warning {
+  background-color: #faad14;
+  color: white;
+}
+
+.alert-success {
+  background-color: #52c41a;
+  color: white;
+}
+
+.rugpull-potential {
+  margin-bottom: 1rem;
+}
+
+.rugpull-icon {
+  font-size: 1.5rem;
+  margin-right: 0.5rem;
+}
+
+.risk-factors-list {
+  list-style-type: disc;
+  padding-left: 20px;
+}
+
+.test-details {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
 }
 </style> 

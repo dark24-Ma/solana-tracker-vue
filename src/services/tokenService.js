@@ -76,7 +76,7 @@ class TokenService {
             exchange = bestPair.dexId.toLowerCase();
           }
           
-          return {
+          const token = {
             name: profile.description || profile.tokenAddress.substring(0, 8),
             symbol: profile.symbol || '',
             priceUsd: bestPair ? parseFloat(bestPair.priceUsd || 0) : 0,
@@ -100,6 +100,11 @@ class TokenService {
             description: profile.description || '',
             url: bestPair ? bestPair.url : profile.url || ''
           };
+          
+          // Ajouter le score de fiabilité
+          token.rugpullScore = this.calculateRugpullScore(token);
+          
+          return token;
         });
     } catch (error) {
       console.error('Erreur lors de la récupération des tokens:', error);
@@ -264,6 +269,188 @@ class TokenService {
       description: `Ceci est un token de démonstration numéro ${index} pour tester l'interface utilisateur.`,
       logoURI: '',
       isNew: index % 3 === 0 // Certains tokens marqués comme nouveaux
+    };
+  }
+
+  /**
+   * Calcule le score de fiabilité d'un token pour déterminer les risques de rugpull
+   * @param {Object} token - Le token à évaluer
+   * @returns {Object} Score de fiabilité et détails des tests
+   */
+  static calculateRugpullScore(token) {
+    const tests = {
+      liquidityTest: { 
+        name: 'liquidity',
+        passed: false, 
+        weight: 25, 
+        description: 'Liquidité suffisante',
+        details: 'La liquidité doit être d\'au moins 10 000$ pour limiter les manipulations de prix'
+      },
+      ageTest: { 
+        name: 'age',
+        passed: false, 
+        weight: 20, 
+        description: 'Token existant depuis plus de 3 jours',
+        details: 'Les rugpulls se produisent souvent dans les premiers jours après le lancement' 
+      },
+      socialTest: { 
+        name: 'socialMedia',
+        passed: false, 
+        weight: 15, 
+        description: 'Présence sur réseaux sociaux',
+        details: 'L\'absence de réseaux sociaux actifs est un signal d\'alarme majeur' 
+      },
+      websiteTest: { 
+        name: 'website',
+        passed: false, 
+        weight: 15, 
+        description: 'Site web existant',
+        details: 'Un projet légitime dispose généralement d\'un site web' 
+      },
+      volumeTest: { 
+        name: 'volume',
+        passed: false, 
+        weight: 15, 
+        description: 'Volume d\'échange significatif',
+        details: 'Un faible volume d\'échange indique un manque d\'intérêt ou une manipulation' 
+      },
+      exchangeTest: { 
+        name: 'exchange',
+        passed: false, 
+        weight: 10, 
+        description: 'Listé sur un exchange fiable',
+        details: 'Les exchanges établis ont généralement des processus de vérification' 
+      }
+    };
+    
+    // Test de liquidité - Minimum 10,000$
+    if (token.liquidity && token.liquidity >= 10000) {
+      tests.liquidityTest.passed = true;
+    }
+    
+    // Test d'âge - Au moins 3 jours
+    if (token.createdAt) {
+      const tokenAge = new Date() - new Date(token.createdAt);
+      const daysDifference = tokenAge / (1000 * 60 * 60 * 24);
+      tests.ageTest.passed = daysDifference >= 3;
+      
+      // Ajouter l'âge précis pour plus de détails
+      tests.ageTest.actualValue = daysDifference.toFixed(1) + ' jours';
+    }
+    
+    // Test de présence sur les réseaux sociaux
+    if (token.links && Array.isArray(token.links)) {
+      const socialLinks = token.links.filter(link => 
+        (link.type && ['twitter', 'telegram', 'discord'].includes(link.type.toLowerCase())) ||
+        (link.url && (link.url.includes('twitter.com') || link.url.includes('t.me') || link.url.includes('discord.gg')))
+      );
+      
+      tests.socialTest.passed = socialLinks.length > 0;
+      tests.socialTest.actualValue = socialLinks.length + ' réseaux sociaux trouvés';
+    }
+    
+    // Test de site web
+    if (token.website || (token.links && Array.isArray(token.links) && token.links.some(link => 
+      (link.type === 'website' || link.label === 'Website') || 
+      (link.url && (link.url.includes('http://') || link.url.includes('https://')))
+    ))) {
+      tests.websiteTest.passed = true;
+      const websiteLink = token.website || token.links.find(link => 
+        (link.type === 'website' || link.label === 'Website') || 
+        (link.url && (link.url.includes('http://') || link.url.includes('https://')))
+      )?.url;
+      tests.websiteTest.actualValue = websiteLink || 'Site web trouvé';
+    }
+    
+    // Test du volume d'échange - Minimum 5,000$
+    if (token.volume24h) {
+      tests.volumeTest.passed = token.volume24h >= 5000;
+      tests.volumeTest.actualValue = '$' + Math.round(token.volume24h).toLocaleString('fr-FR');
+    }
+    
+    // Test de l'exchange - Exchanges fiables
+    const reliableExchanges = ['jupiter', 'raydium', 'orca', 'phoenix'];
+    if (token.exchange) {
+      tests.exchangeTest.passed = reliableExchanges.includes(token.exchange.toLowerCase());
+      tests.exchangeTest.actualValue = token.exchange;
+    }
+    
+    // Calcul du score final
+    let totalScore = 0;
+    
+    for (const test in tests) {
+      if (tests[test].passed) {
+        totalScore += tests[test].weight;
+      }
+    }
+    
+    // Nombre de tests passés
+    const passedTests = Object.values(tests).filter(test => test.passed).length;
+    const totalTests = Object.keys(tests).length;
+    
+    // Niveau de risque
+    let level = '';
+    let riskComment = '';
+    
+    if (totalScore >= 85) {
+      level = 'Très faible';
+      riskComment = 'Ce token présente des caractéristiques très positives avec un risque minimal de rugpull. Il a passé presque tous les tests de sécurité.';
+    } else if (totalScore >= 70) {
+      level = 'Faible';
+      riskComment = 'Ce token semble légitime avec quelques facteurs de risque mineurs. Le risque de rugpull est faible mais pas inexistant.';
+    } else if (totalScore >= 50) {
+      level = 'Modéré';
+      riskComment = 'Ce token présente plusieurs signaux d\'alarme. Soyez prudent et n\'investissez que ce que vous êtes prêt à perdre.';
+    } else if (totalScore >= 30) {
+      level = 'Important';
+      riskComment = 'Attention ! Ce token présente de nombreux signaux d\'alarme typiques des rugpulls. Le risque est considérable.';
+    } else {
+      level = 'Élevé';
+      riskComment = 'DANGER ! Ce token présente presque tous les signaux d\'alarme d\'un rugpull potentiel. Investir est fortement déconseillé.';
+    }
+    
+    // Facteurs de risque clés
+    const keyRiskFactors = [];
+    
+    // Liquidité trop faible = risque élevé de manipulation des prix
+    if (!tests.liquidityTest.passed) {
+      keyRiskFactors.push('Liquidité insuffisante : risque élevé de manipulation des prix et difficultés pour vendre');
+    }
+    
+    // Token trop récent = risque élevé de rugpull précoce
+    if (!tests.ageTest.passed) {
+      keyRiskFactors.push('Token très récent : la plupart des rugpulls se produisent dans les 72 premières heures');
+    }
+    
+    // Absence de réseaux sociaux = manque de transparence
+    if (!tests.socialTest.passed) {
+      keyRiskFactors.push('Absence de réseaux sociaux : manque de transparence et d\'engagement communautaire');
+    }
+    
+    // Absence de site web = projet potentiellement non sérieux
+    if (!tests.websiteTest.passed) {
+      keyRiskFactors.push('Pas de site web : indique un manque de professionnalisme et d\'engagement à long terme');
+    }
+    
+    // Volume faible = manipulation possible ou manque d'intérêt
+    if (!tests.volumeTest.passed) {
+      keyRiskFactors.push('Volume d\'échange faible : peut indiquer un manque d\'intérêt ou une manipulation');
+    }
+    
+    // Exchange non fiable = moins de garanties
+    if (!tests.exchangeTest.passed) {
+      keyRiskFactors.push('Non listé sur un exchange majeur : moins de garanties de légitimité');
+    }
+    
+    return {
+      score: totalScore / 10, // Score sur 10 pour plus de lisibilité
+      passedTests,
+      totalTests,
+      tests: Object.values(tests), // Convertir en tableau pour faciliter l'itération
+      level,
+      riskComment,
+      keyRiskFactors,
+      rugpullPotential: totalScore < 50 ? 'Élevé' : (totalScore < 70 ? 'Possible' : 'Faible')
     };
   }
 }

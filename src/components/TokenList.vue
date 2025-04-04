@@ -139,6 +139,10 @@
                     </h5>
                     <div class="token-symbol">{{ token.symbol }}</div>
                   </div>
+                  <div v-if="token.rugpullScore" class="ms-auto reliability-badge" :class="getReliabilityClass(token.rugpullScore)">
+                    <i :class="getRugpullIcon(token.rugpullScore.rugpullPotential)" class="me-1 risk-icon"></i>
+                    {{ token.rugpullScore.level }}
+                  </div>
                 </div>
                 
                 <div class="token-details">
@@ -784,6 +788,42 @@ export default {
       return exchangeClasses[exchange] || '';
     };
     
+    // Récupérer la classe CSS pour le score de fiabilité
+    const getReliabilityClass = (score) => {
+      if (!score) return 'reliability-na';
+      
+      switch(score.level) {
+        case 'Très faible':
+          return 'reliability-very-low';
+        case 'Faible':
+          return 'reliability-low';
+        case 'Modéré':
+          return 'reliability-moderate';
+        case 'Important':
+          return 'reliability-high';
+        case 'Élevé':
+          return 'reliability-danger';
+        default:
+          return 'reliability-na';
+      }
+    };
+    
+    // Récupérer l'icône pour le potentiel de rugpull
+    const getRugpullIcon = (rugpullPotential) => {
+      if (!rugpullPotential) return 'fas fa-question-circle';
+      
+      switch(rugpullPotential) {
+        case 'Élevé':
+          return 'fas fa-exclamation-triangle';
+        case 'Possible':
+          return 'fas fa-exclamation-circle';
+        case 'Faible':
+          return 'fas fa-check-circle';
+        default:
+          return 'fas fa-question-circle';
+      }
+    };
+    
     // Cycle de vie du composant
     onMounted(async () => {
       try {
@@ -934,7 +974,9 @@ export default {
       showTokenDetail,
       closeTokenDetail,
       formatExchangeName,
-      getExchangeClass
+      getExchangeClass,
+      getReliabilityClass,
+      getRugpullIcon
     };
   }
 };
@@ -1352,5 +1394,50 @@ export default {
 
 .text-danger {
   color: #f14d7b !important;
+}
+
+.reliability-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reliability-very-low {
+  background-color: #ff4d4f;
+  color: white;
+}
+
+.reliability-low {
+  background-color: #faad14;
+  color: white;
+}
+
+.reliability-moderate {
+  background-color: #52c41a;
+  color: white;
+}
+
+.reliability-high {
+  background-color: #1890ff;
+  color: white;
+}
+
+.reliability-danger {
+  background-color: #f14d7b;
+  color: white;
+}
+
+.reliability-na {
+  background-color: #d9d9d9;
+  color: #666;
+}
+
+.risk-icon {
+  font-size: 0.8rem;
 }
 </style> 
