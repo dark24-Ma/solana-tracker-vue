@@ -98,7 +98,10 @@ export default {
     
     // Connecter au serveur Socket.io
     const connectSocket = () => {
-      socket.value = io(process.env.VUE_APP_BACKEND_URL || 'http://localhost:3000');
+      const socketUrl = process.env.VUE_APP_SOCKET_URL || 'http://localhost:3000';
+      console.log('App.vue - Tentative de connexion à:', socketUrl);
+      
+      socket.value = io(socketUrl);
       
       socket.value.on('connect', () => {
         console.log('Socket.io connecté au serveur depuis App.vue');
