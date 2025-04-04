@@ -1,5 +1,19 @@
 <template>
   <div class="token-list-container">
+    <!-- Système d'alertes en haut de la page -->
+    <div class="alerts-container mb-3" v-if="alerts.length > 0">
+      <div v-for="alert in alerts" :key="alert.id" 
+           class="alert alert-dismissible fade show mb-2" 
+           :class="`alert-${alert.type}`" 
+           role="alert">
+        <i :class="getAlertIcon(alert.type)" class="me-2"></i>
+        {{ alert.message }}
+        <button type="button" class="btn-close" 
+                @click="removeAlert(alert.id)" 
+                aria-label="Fermer"></button>
+      </div>
+    </div>
+
     <div class="dashboard-header mb-4">
       <h1 class="token-list-title">Surveillance des Tokens Solana</h1>
       <div class="filters d-flex align-items-center mb-3">
@@ -239,6 +253,8 @@ export default {
     const checkingSolscan = ref(false);
     const notificationSound = ref(null);
     const previousTokensLength = ref(0);
+    const alerts = ref([]);
+    const MAX_ALERTS = 3;
     
     // Variable pour éviter les requêtes simultanées
     const isCurrentlyFetching = ref(false);
@@ -273,63 +289,92 @@ export default {
     
     // Connexion au backend
     const connectSocket = () => {
-      socket.value = io(process.env.VUE_APP_BACKEND_URL || 'http://localhost:3000');
-      
-      socket.value.on('connect', () => {
-        console.log('Socket.io connecté au serveur');
-        addLog('success', 'Connecté au serveur en temps réel');
-      });
-      
-      socket.value.on('newToken', (newToken) => {
-        // S'assurer que tokens.value est un tableau
-        if (!Array.isArray(tokens.value)) {
-          tokens.value = [];
-        }
-        // Ajouter le nouveau token à la liste
-        tokens.value = [newToken, ...tokens.value];
-        addLog('info', `Nouveau token détecté: ${newToken.name} (${newToken.symbol})`);
-      });
-      
-      socket.value.on('error', (errorMsg) => {
-        console.error('Erreur Socket.io:', errorMsg);
-        addLog('error', `Erreur: ${errorMsg}`);
-      });
-      
-      socket.value.on('disconnect', () => {
-        console.log('Socket.io déconnecté du serveur');
-        addLog('warning', 'Déconnecté du serveur en temps réel');
-      });
-      
-      socket.value.on('systemLog', (logData) => {
-        addLog(logData.type, logData.message);
-      });
-      
-      socket.value.on('clientCount', (data) => {
-        clientCount.value = data.count;
-      });
-      
-      socket.value.on('systemStatus', (statusData) => {
-        if (statusData.connectedToSolana) {
-          addLog('success', `Connecté au réseau Solana (${statusData.solanaEndpoint})`);
-        } else {
-          addLog('error', 'Non connecté au réseau Solana');
-        }
+      try {
+        socket.value = io(process.env.VUE_APP_BACKEND_URL || 'http://localhost:3000');
         
-        if (statusData.connectedToMongoDB) {
-          addLog('success', 'Connecté à la base de données MongoDB');
-        } else {
-          addLog('error', 'Non connecté à la base de données');
-        }
+        socket.value.on('connect', () => {
+          console.log('Socket.io connecté au serveur');
+          addLog('success', 'Connecté au serveur en temps réel');
+        });
         
-        addLog('info', `${statusData.tokenCount || 0} tokens en base de données`);
-        addLog('info', `${statusData.clientCount || 0} clients connectés`);
+        socket.value.on('newToken', (newToken) => {
+          // S'assurer que tokens.value est un tableau
+          if (!Array.isArray(tokens.value)) {
+            tokens.value = [];
+          }
+          // Ajouter le nouveau token à la liste
+          tokens.value = [newToken, ...tokens.value];
+          addLog('info', `Nouveau token détecté: ${newToken.name} (${newToken.symbol})`);
+          addAlert('info', `Nouveau token détecté: ${newToken.name} (${newToken.symbol})`);
+          // Jouer le son de notification
+          playNotificationSound();
+        });
         
-        if (statusData.isWatching) {
-          addLog('success', 'Surveillance active');
-        } else {
-          addLog('warning', 'Surveillance inactive');
-        }
-      });
+        socket.value.on('error', (errorMsg) => {
+          console.error('Erreur Socket.io:', errorMsg);
+          addLog('error', `Erreur: ${errorMsg}`);
+          addAlert('danger', `Erreur de connexion: ${errorMsg}`);
+        });
+        
+        socket.value.on('disconnect', () => {
+          console.log('Socket.io déconnecté du serveur');
+          addLog('warning', 'Déconnecté du serveur en temps réel');
+          addAlert('warning', 'Déconnecté du serveur. Tentative de reconnexion...');
+        });
+        
+        socket.value.on('systemLog', (logData) => {
+          addLog(logData.type, logData.message);
+          
+          // Afficher certains logs importants comme alertes
+          if (logData.type === 'error' || logData.type === 'warning') {
+            addAlert(logData.type === 'error' ? 'danger' : 'warning', logData.message);
+          }
+        });
+        
+        socket.value.on('clientCount', (data) => {
+          clientCount.value = data.count;
+        });
+        
+        socket.value.on('systemStatus', (statusData) => {
+          if (statusData.connectedToSolana) {
+            addLog('success', `Connecté au réseau Solana (${statusData.solanaEndpoint})`);
+          } else {
+            addLog('error', 'Non connecté au réseau Solana');
+          }
+          
+          if (statusData.connectedToMongoDB) {
+            addLog('success', 'Connecté à la base de données MongoDB');
+          } else {
+            addLog('error', 'Non connecté à la base de données');
+          }
+          
+          addLog('info', `${statusData.tokenCount || 0} tokens en base de données`);
+          addLog('info', `${statusData.clientCount || 0} clients connectés`);
+          
+          if (statusData.isWatching) {
+            addLog('success', 'Surveillance active');
+          } else {
+            addLog('warning', 'Surveillance inactive');
+          }
+        });
+      } catch (err) {
+        console.error('Erreur lors de la connexion au socket:', err);
+        addLog('error', `Erreur de connexion: ${err.message}`);
+        addAlert('danger', `Impossible de se connecter au serveur: ${err.message}`);
+      }
+    };
+    
+    // Fonction pour obtenir l'icône appropriée pour le type d'alerte
+    const getAlertIcon = (type) => {
+      const icons = {
+        'danger': 'fas fa-exclamation-circle',
+        'warning': 'fas fa-exclamation-triangle',
+        'success': 'fas fa-check-circle',
+        'info': 'fas fa-info-circle',
+        'primary': 'fas fa-bell',
+        'secondary': 'fas fa-cog'
+      };
+      return icons[type] || 'fas fa-bell';
     };
     
     // Récupérer les tokens depuis l'API
@@ -360,14 +405,38 @@ export default {
             // Intégrer les nouveaux tokens sans remplacer tout le tableau
             tokens.value = [...newTokens, ...tokens.value];
             addLog('success', `${newTokens.length} nouveaux tokens détectés`);
+            
+            // Afficher également une alerte en haut
+            addAlert('success', `${newTokens.length} nouveaux tokens détectés`);
           }
         }
       } catch (err) {
         console.error('Erreur lors de la récupération des tokens:', err);
         
+        // Déterminer le type d'erreur
+        let errorMessage = `Erreur: ${err.message}`;
+        let errorType = 'danger';
+        
+        // Vérifier si c'est une erreur de limite de taux (too many requests)
+        if (err.message && err.message.includes('429') || err.message.includes('too many request')) {
+          errorMessage = "Limite d'API dépassée. Veuillez attendre avant de réessayer.";
+          errorType = 'warning';
+        } else if (err.message && err.message.includes('timeout')) {
+          errorMessage = "Délai d'attente dépassé. Vérifiez votre connexion.";
+          errorType = 'warning';
+        } else if (err.message && err.message.includes('network')) {
+          errorMessage = "Erreur de connexion réseau. Vérifiez votre connexion internet.";
+          errorType = 'warning';
+        }
+        
+        // Afficher l'erreur dans les logs
+        addLog('error', errorMessage);
+        
+        // Afficher l'erreur comme alerte
+        addAlert(errorType, errorMessage);
+        
         if (!error.value) {
-          error.value = 'Impossible de récupérer les tokens. Veuillez réessayer plus tard.';
-          addLog('error', `Erreur lors de la récupération des tokens: ${err.message}`);
+          error.value = errorMessage;
         }
       } finally {
         loading.value = false;
@@ -657,6 +726,12 @@ export default {
         notificationSound.value.currentTime = 0;
         notificationSound.value.play().catch(err => {
           console.error('Erreur lors de la lecture du son:', err);
+          addLog('warning', `Impossible de jouer le son de notification: ${err.message}`);
+          
+          // Si c'est la première fois qu'on rencontre cette erreur, afficher une alerte
+          if (err.name === 'NotAllowedError') {
+            addAlert('warning', 'L\'interaction utilisateur est requise pour jouer le son. Veuillez cliquer n\'importe où sur la page.');
+          }
         });
       }
     };
@@ -678,6 +753,30 @@ export default {
         currentPage.value = Math.max(1, newTotalPages);
       }
     });
+    
+    // Ajoutons une fonction pour ajouter des alertes
+    const addAlert = (type, message) => {
+      // Générer un ID unique pour l'alerte
+      const id = Date.now();
+      alerts.value.unshift({ id, type, message });
+      
+      // Limiter le nombre d'alertes affichées
+      if (alerts.value.length > MAX_ALERTS) {
+        alerts.value = alerts.value.slice(0, MAX_ALERTS);
+      }
+      
+      // Auto-suppression après 10 secondes pour les alertes qui ne sont pas des erreurs
+      if (type !== 'danger') {
+        setTimeout(() => {
+          removeAlert(id);
+        }, 10000);
+      }
+    };
+    
+    // Fonction pour supprimer une alerte
+    const removeAlert = (id) => {
+      alerts.value = alerts.value.filter(alert => alert.id !== id);
+    };
     
     return {
       tokens,
@@ -712,7 +811,11 @@ export default {
       getLinkIcon,
       getLinkLabel,
       playNotificationSound,
-      notificationSound
+      notificationSound,
+      alerts,
+      addAlert,
+      removeAlert,
+      getAlertIcon
     };
   }
 };
@@ -1000,6 +1103,54 @@ export default {
   100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgba(153, 69, 255, 0);
+  }
+}
+
+.alerts-container {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.alert {
+  border-radius: 8px;
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: slideInDown 0.3s ease-out;
+}
+
+.alert-danger {
+  background-color: rgba(220, 53, 69, 0.1);
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+.alert-warning {
+  background-color: rgba(255, 193, 7, 0.1);
+  border-color: var(--warning-color);
+  color: var(--warning-color);
+}
+
+.alert-success {
+  background-color: rgba(25, 135, 84, 0.1);
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+.alert-info {
+  background-color: rgba(13, 202, 240, 0.1);
+  border-color: var(--info-color);
+  color: var(--info-color);
+}
+
+@keyframes slideInDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 </style> 
