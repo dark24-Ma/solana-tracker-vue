@@ -124,34 +124,26 @@
                   <div class="row g-2">
                     <div class="col-6">
                       <div class="detail-label">
-                        <i class="fas fa-dollar-sign me-1 text-success"></i> Prix
+                        <i class="fas fa-info-circle me-1 text-info"></i> Chaîne
                       </div>
-                      <div class="detail-value" :class="{'text-success': token.price > 0}">
-                        {{ formatPrice(token.price) }}
+                      <div class="detail-value">
+                        Solana
                       </div>
                     </div>
                     <div class="col-6">
                       <div class="detail-label">
-                        <i class="fas fa-chart-line me-1 text-primary"></i> Market Cap
+                        <i class="fas fa-link me-1 text-primary"></i> Adresse
                       </div>
                       <div class="detail-value">
-                        {{ formatNumber(token.marketCap) }}
+                        {{ token.address ? token.address.substring(0, 6) + '...' + token.address.substring(token.address.length - 4) : 'N/A' }}
                       </div>
                     </div>
-                    <div class="col-6">
+                    <div class="col-12" v-if="token.description">
                       <div class="detail-label">
-                        <i class="fas fa-exchange-alt me-1 text-info"></i> Volume 24h
+                        <i class="fas fa-file-alt me-1 text-warning"></i> Description
                       </div>
-                      <div class="detail-value">
-                        {{ formatNumber(token.volume24h) }}
-                      </div>
-                    </div>
-                    <div class="col-6">
-                      <div class="detail-label">
-                        <i class="fas fa-coins me-1 text-warning"></i> Supply Total
-                      </div>
-                      <div class="detail-value">
-                        {{ formatNumber(token.totalSupply) }}
+                      <div class="detail-value description-text">
+                        {{ token.description }}
                       </div>
                     </div>
                   </div>
@@ -162,9 +154,23 @@
                     <small class="text-secondary">
                       <i class="far fa-clock me-1"></i> {{ formatDate(token.createdAt) }}
                     </small>
-                    <div>
+                    <div class="d-flex">
+                      <a v-if="token.url" :href="token.url" target="_blank" class="btn btn-sm btn-outline-success me-2">
+                        <i class="fas fa-external-link-alt me-1"></i> Dexscreener
+                      </a>
                       <a :href="`https://solscan.io/token/${token.mint}`" target="_blank" class="btn btn-sm btn-outline-primary">
                         <i class="fas fa-external-link-alt me-1"></i> Explorer
+                      </a>
+                    </div>
+                  </div>
+                  <div class="mt-2" v-if="token.links && token.links.length > 0">
+                    <div class="d-flex flex-wrap gap-2">
+                      <a v-for="(link, idx) in token.links" :key="idx" 
+                         :href="link.url" target="_blank" 
+                         class="btn btn-sm" 
+                         :class="getLinkButtonClass(link.type || link.label)">
+                         <i :class="getLinkIcon(link.type || link.label) + ' me-1'"></i> 
+                         {{ link.label || getLinkLabel(link.type) }}
                       </a>
                     </div>
                   </div>
@@ -213,7 +219,6 @@
 
 <script>
 import { onBeforeUnmount, ref, computed, onMounted, watch } from 'vue';
-import axios from 'axios';
 import io from 'socket.io-client';
 
 export default {
@@ -328,25 +333,36 @@ export default {
       
       try {
         addLog('info', 'Récupération des tokens...');
-        const response = await axios.get(`${process.env.VUE_APP_BACKEND_URL || 'http://localhost:3000'}/api/tokens`);
         
-        // Vérifier que la réponse est un tableau
-        if (Array.isArray(response.data)) {
-          tokens.value = response.data;
-          addLog('success', `${response.data.length} tokens récupérés avec succès`);
-        } else {
-          console.error('La réponse API n\'est pas un tableau:', response.data);
+        // Utiliser le service TokenService pour récupérer les tokens
+        import('../services/tokenService').then(async (module) => {
+          const TokenService = module.default;
+          const tokensData = await TokenService.fetchAllTokens();
+          
+          if (Array.isArray(tokensData)) {
+            tokens.value = tokensData;
+            addLog('success', `${tokensData.length} tokens récupérés avec succès`);
+          } else {
+            console.error('La réponse API n\'est pas un tableau:', tokensData);
+            tokens.value = [];
+            error.value = 'Format de données invalide. Veuillez réessayer plus tard.';
+            addLog('error', 'Format de données invalide reçu de l\'API');
+          }
+          
+          loading.value = false;
+        }).catch(err => {
+          console.error('Erreur lors du chargement du service TokenService:', err);
+          error.value = 'Impossible de charger le service de tokens. Veuillez réessayer plus tard.';
           tokens.value = [];
-          error.value = 'Format de données invalide. Veuillez réessayer plus tard.';
-          addLog('error', 'Format de données invalide reçu de l\'API');
-        }
+          loading.value = false;
+          addLog('error', `Erreur lors du chargement du service TokenService: ${err.message}`);
+        });
       } catch (err) {
         console.error('Erreur lors de la récupération des tokens:', err);
         error.value = 'Impossible de récupérer les tokens. Veuillez réessayer plus tard.';
         tokens.value = []; // S'assurer que tokens est toujours un tableau
-        addLog('error', `Erreur lors de la récupération des tokens: ${err.message}`);
-      } finally {
         loading.value = false;
+        addLog('error', `Erreur lors de la récupération des tokens: ${err.message}`);
       }
     };
     
@@ -548,6 +564,44 @@ export default {
       }
     };
     
+    const getLinkButtonClass = (type) => {
+      const typeClasses = {
+        'Website': 'btn-outline-primary',
+        'website': 'btn-outline-primary',
+        'twitter': 'btn-outline-info',
+        'telegram': 'btn-outline-primary',
+        'discord': 'btn-outline-secondary',
+        'medium': 'btn-outline-dark',
+        'github': 'btn-outline-dark'
+      };
+      return typeClasses[type] || 'btn-outline-secondary';
+    };
+    
+    const getLinkIcon = (type) => {
+      const typeIcons = {
+        'Website': 'fas fa-globe',
+        'website': 'fas fa-globe',
+        'twitter': 'fab fa-twitter',
+        'telegram': 'fab fa-telegram',
+        'discord': 'fab fa-discord',
+        'medium': 'fab fa-medium',
+        'github': 'fab fa-github'
+      };
+      return typeIcons[type] || 'fas fa-link';
+    };
+    
+    const getLinkLabel = (type) => {
+      const typeLabels = {
+        'website': 'Site Web',
+        'twitter': 'Twitter',
+        'telegram': 'Telegram',
+        'discord': 'Discord',
+        'medium': 'Medium',
+        'github': 'GitHub'
+      };
+      return typeLabels[type] || type;
+    };
+    
     // Cycle de vie du composant
     onMounted(() => {
       fetchTokens();
@@ -613,7 +667,10 @@ export default {
       clientCount,
       checkingSolscan,
       checkSolscan,
-      addSystemStatusLog
+      addSystemStatusLog,
+      getLinkButtonClass,
+      getLinkIcon,
+      getLinkLabel
     };
   }
 };
@@ -858,6 +915,16 @@ export default {
 .btn-sm {
   padding: 0.25rem 0.6rem;
   font-size: 0.7rem;
+}
+
+.description-text {
+  max-height: 60px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  padding: 5px;
+  background-color: rgba(153, 69, 255, 0.05);
+  border-radius: 4px;
+  margin-top: 5px;
 }
 
 @media (max-width: 767.98px) {
